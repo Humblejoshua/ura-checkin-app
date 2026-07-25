@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tax Academy — QR Code Generator</title>
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; color: #333; }
+
+    .header { background: #0265B1; color: white; padding: 20px; text-align: center; }
+    .header h1 { font-size: 1.5rem; margin-bottom: 4px; }
+    .header p { opacity: 0.85; font-size: 0.9rem; }
+
+    .controls { max-width: 800px; margin: 20px auto; padding: 0 16px; display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+    .controls label { font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 4px; }
+    .controls select, .controls input, .controls button {
+      padding: 10px 14px; border-radius: 8px; border: 1px solid #ccc; font-size: 0.9rem;
+    }
+    .controls button {
+      background: #0265B1; color: white; border: none; cursor: pointer; font-weight: 600;
+    }
+    .controls button:hover { background: #014A82; }
+    .controls button.print-btn { background: #18A1D0; }
+
+    .info { max-width: 800px; margin: 0 auto 12px; padding: 0 16px; font-size: 0.85rem; color: #666; }
+
+    .grid {
+      max-width: 1100px; margin: 0 auto; padding: 16px;
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px;
+    }
+    .qr-card {
+      background: white; border-radius: 10px; padding: 12px; text-align: center;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.1); border: 1px solid #e0e0e0;
+    }
+    .qr-card .name { font-size: 0.8rem; font-weight: 600; margin-top: 8px; line-height: 1.2; }
+    .qr-card .staff-id { font-size: 0.75rem; color: #666; }
+    .qr-card .group { font-size: 0.7rem; color: #18A1D0; }
+    .qr-card #qr { display: inline-block; }
+
+    .upload-area {
+      max-width: 800px; margin: 40px auto; padding: 40px; border: 2px dashed #0265B1;
+      border-radius: 12px; text-align: center; background: white; cursor: pointer;
+    }
+    .upload-area p { color: #666; }
+    .upload-area input { display: none; }
+
+    @media print {
+      .header, .controls, .info, .upload-area { display: none !important; }
+      .grid { grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 10px; }
+      .qr-card { break-inside: avoid; page-break-inside: avoid; border: 1px solid #ccc; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>Tax Academy On-Boarding 2026</h1>
+    <p>QR Code Generator — Print one QR per learner</p>
+  </div>
+
+  <div class="upload-area" id="uploadArea">
+    <p><strong>Drop master-list.csv here</strong> or click to browse</p>
+    <input type="file" id="csvFile" accept=".csv">
+  </div>
+
+  <div class="controls" id="controls" style="display:none">
+    <div>
+      <label>Filter Group</label>
+      <select id="groupFilter"><option value="all">All Groups</option></select>
+    </div>
+    <div>
+      <label>Search</label>
+      <input type="text" id="searchBox" placeholder="Name or Staff ID...">
+    </div>
+    <div style="flex:1"></div>
+    <button class="print-btn" onclick="window.print()">Print QR Codes</button>
+  </div>
+
+  <div class="info" id="info" style="display:none"></div>
+  <div class="grid" id="grid"></div>
+
+  <script>
+    let learners = [];
+
+    const uploadArea = document.getElementById('uploadArea');
+    const csvFile = document.getElementById('csvFile');
+
+    uploadArea.addEventListener('click', () => csvFile.click());
+    uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.style.borderColor = '#014A82'; });
+    uploadArea.addEventListener('dragleave', () => { uploadArea.style.borderColor = '#0265B1'; });
+    uploadArea.addEventListener('drop', e => {
+      e.preventDefault();
+      uploadArea.style.borderColor = '#0265B1';
+      const file = e.dataTransfer.files[0];
+      if (file) parseCSV(file);
+    });
+    csvFile.addEventListener('change', e => {
+      if (e.target.files[0]) parseCSV(e.target.files[0]);
+    });
+
+    function parseCSV(file) {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const lines = e.target.result.split(/\r?\n/).filter(l => l.trim());
+        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+
+        const snIdx = headers.findIndex(h => h.includes('s/n') || h.includes('sn') || h === 's/n');
+        const nameIdx = headers.findIndex(h => h.includes('candidate') || h.includes('name'));
+        const staffIdx = headers.findIndex(h => h.includes('staff') || h.includes('id'));
+        const indexIdx = headers.findIndex(h => h.includes('index'));
+        const groupIdx = headers.findIndex(h => h.includes('group'));
+
+        learners = [];
+        for (let i = 1; i < lines.length; i++) {
+          const cols = lines[i].split(',').map(c => c.trim());
+          if (!cols[staffIdx] || cols[staffIdx] === 'MISSING' || cols[staffIdx] === 'NOT FOUND') continue;
+          learners.push({
+            sn: cols[snIdx] || i,
+            name: cols[nameIdx] || '',
+            staffId: cols[staffIdx] || '',
+            indexNumber: cols[indexIdx] || '',
+            group: cols[groupIdx] || ''
+          });
+        }
+
+        uploadArea.style.display = 'none';
+        document.getElementById('controls').style.display = 'flex';
+        document.getElementById('info').style.display = 'block';
+
+        const groups = [...new Set(learners.map(l => l.group).filter(Boolean))].sort();
+        const sel = document.getElementById('groupFilter');
+        sel.innerHTML = '<option value="all">All Groups (' + learners.length + ')</option>';
+        groups.forEach(g => {
+          const count = learners.filter(l => l.group === g).length;
+          sel.innerHTML += '<option value="' + g + '">' + g + ' (' + count + ')</option>';
+        });
+
+        sel.addEventListener('change', render);
+        document.getElementById('searchBox').addEventListener('input', render);
+        render();
+      };
+      reader.readAsText(file);
+    }
+
+    function render() {
+      const group = document.getElementById('groupFilter').value;
+      const search = document.getElementById('searchBox').value.toLowerCase();
+      const grid = document.getElementById('grid');
+      grid.innerHTML = '';
+
+      let filtered = learners;
+      if (group !== 'all') filtered = filtered.filter(l => l.group === group);
+      if (search) filtered = filtered.filter(l =>
+        l.name.toLowerCase().includes(search) || l.staffId.includes(search)
+      );
+
+      document.getElementById('info').textContent =
+        'Showing ' + filtered.length + ' of ' + learners.length + ' learners — Print this page to get QR codes';
+
+      filtered.forEach(l => {
+        const card = document.createElement('div');
+        card.className = 'qr-card';
+        card.innerHTML =
+          '<div id="qr-' + l.staffId + '"></div>' +
+          '<div class="name">' + l.name + '</div>' +
+          '<div class="staff-id">' + l.staffId + '</div>' +
+          (l.group ? '<div class="group">' + l.group + '</div>' : '');
+        grid.appendChild(card);
+
+        new QRCode(document.getElementById('qr-' + l.staffId), {
+          text: l.staffId,
+          width: 120,
+          height: 120,
+          colorDark: '#014A82',
+          colorLight: '#ffffff'
+        });
+      });
+    }
+  </script>
+
+</body>
+</html>
